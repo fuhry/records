@@ -39,6 +39,10 @@ func (re *Records) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	m.Authoritative = true
 
 	nxdomain := true
+	// cnameMaybeUpstream tracks whether we are currently trying to resolve a CNAME. We always look for a match among
+	// the records handled by this plugin first, then we go upstream. This is required to enforce stack depth and loop
+	// detection.
+	cnameMaybeUpstream := false
 	var soa dns.RR
 	cnameStack := make(map[string]struct{}, 0)
 
@@ -64,18 +68,25 @@ resolveLoop:
 			if r.Header().Rrtype == dns.TypeCNAME {
 				cnameStack[qname] = struct{}{}
 				qname = r.(*dns.CNAME).Target
-				if plugin.Zones(re.origins).Matches(qname) == "" {
-					// if the CNAME target isn't a record in this zone, restart with upstream.
-					msgs, err := re.upstream.Lookup(ctx, state, qname, state.QType())
-					if err != nil {
-						return dns.RcodeServerFailure, err
-					}
-					for _, ans := range msgs.Answer {
-						m.Answer = append(m.Answer, ans)
-					}
-					break resolveLoop
-				}
+				cnameMaybeUpstream = true
+				// restart resolution with new query name
 				goto resolveLoop
+			} else {
+				// If we found a match but the record type in the zone we control isn't
+				// another CNAME, that means we have reached the end of our chain and we
+				// don't need to go upstream.
+				cnameMaybeUpstream = false
+			}
+		}
+	}
+
+	if cnameMaybeUpstream {
+		// we've found a CNAME but it doesn't point to a record managed by this
+		// plugin. In these cases we always restart with upstream.
+		msgs, err := re.upstream.Lookup(ctx, state, qname, state.QType())
+		if err == nil && len(msgs.Answer) > 0 {
+			for _, ans := range msgs.Answer {
+				m.Answer = append(m.Answer, ans)
 			}
 		}
 	}
