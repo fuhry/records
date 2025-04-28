@@ -1,6 +1,7 @@
 package records
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/coredns/caddy"
@@ -61,6 +62,15 @@ func recordsParse(c *caddy.Controller) (*Records, error) {
 				re.m[o] = append(re.m[o], rr)
 			}
 		}
+	}
+
+	// sort in descending order by number of elements in the name
+	for o, _ := range re.m {
+		sort.Slice(re.m[o], func(i, j int) bool {
+			iLen := len(strings.Split(re.m[o][i].Header().Name, "."))
+			jLen := len(strings.Split(re.m[o][j].Header().Name, "."))
+			return iLen >= jLen
+		})
 	}
 
 	return re, nil

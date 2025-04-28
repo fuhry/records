@@ -75,8 +75,8 @@ RFC 1035 zone file and everything after it will be ignored, hence the need for q
 
 ## Bugs
 
-DNSSEC, nor wildcards are implemented. The lookup algorithm is pretty basic. Future enhancements
-could leverage the code from the *file* plugin to make more compliant with the DNS specification.
+DNSSEC is not implemented. The lookup algorithm is pretty basic. Future enhancements could leverage
+the code from the *file* plugin to make more compliant with the DNS specification.
 
 ## See Also
 

@@ -2,6 +2,7 @@ package records
 
 import (
 	"context"
+	"strings"
 
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/request"
@@ -33,6 +34,7 @@ func (re *Records) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 	m.Authoritative = true
 
 	nxdomain := true
+	wcMatched := false
 	var soa dns.RR
 	for _, r := range re.m[zone] {
 		if r.Header().Rrtype == dns.TypeSOA && soa == nil {
@@ -42,6 +44,25 @@ func (re *Records) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Ms
 			nxdomain = false
 			if r.Header().Rrtype == state.QType() {
 				m.Answer = append(m.Answer, r)
+			}
+		} else if !wcMatched {
+			for _, wc := range Wildcards(qname) {
+				if r.Header().Name == wc {
+					// wildcard matched - copy the record because we need to mutate it for the
+					// response
+					newRecord, err := dns.NewRR(r.String())
+					if err != nil {
+						// failed to copy record
+						break
+					}
+
+					nxdomain = false
+					wcMatched = true
+
+					newRecord.Header().Name = qname
+					m.Answer = append(m.Answer, newRecord)
+					break
+				}
 			}
 		}
 	}
@@ -74,4 +95,14 @@ func New() *Records {
 	re := new(Records)
 	re.m = make(map[string][]dns.RR)
 	return re
+}
+
+func Wildcards(name string) []string {
+	parts := strings.Split(string(name), ".")
+	wildcards := make([]string, len(parts))
+	for i, _ := range parts {
+		parts[i] = "*"
+		wildcards[i] = strings.Join(parts[i:], ".")
+	}
+	return wildcards
 }
